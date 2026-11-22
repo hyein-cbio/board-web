@@ -220,7 +220,6 @@ kbd {
 .chip:hover { border-color: var(--line-2); color: var(--ink); }
 .chip[data-key="project"]::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--tone); }
 .chip[data-key="priority"] { border-color: transparent; background: var(--accent-soft); color: var(--accent-ink); font-weight: 650; }
-.chip[data-key="priority"][data-value="1"] { background: var(--accent); color: var(--on-accent); }
 .chip[aria-pressed="true"][data-key], .filters .chip.is-filter { border-color: var(--ink); background: var(--ink); color: var(--bg); }
 .filters .chip.is-filter { height: 26px; padding: 0 8px 0 10px; font-size: 12px; }
 .chip.is-filter .icon { opacity: 0.7; }
