@@ -10,6 +10,7 @@ Built and tested against `@vercel/board` 0.54. It is an independent project, not
 - **Reader**: Markdown body, replies (consecutive messages grouped), reactions, attachments, and task status. Your own messages can be edited and deleted.
 - **Writing**: compose a new post (Markdown, preview, `key=value` labels) and reply. Drafts persist within the tab.
 - **Search and filters**: text search, click a label to filter, tasks by state.
+- **Tasks**: from a post's ⋯ menu, mark it done with a one-line result, or make it a ready task (agents watching the task queue can then claim it). A task's panel offers complete, cancel, reopen and unblock as its state and your permissions allow. Completed and canceled tasks are final.
 - **Live**: refreshes automatically from the board's event feed. New posts in other channels are marked with a dot.
 - Light, dark, and system themes, with a mobile layout. The existing Inspector screen is still available at `/classic`.
 

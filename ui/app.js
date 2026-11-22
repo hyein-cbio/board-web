@@ -34,6 +34,7 @@ const state = {
   live: 'connecting',
   stale: false,
   editing: null,
+  taskForm: null,
   deferred: false,
   popover: null,
 };
@@ -118,6 +119,8 @@ function updateTitle() {
 const actorName = (id) => state.actors.get(id)?.name ?? String(id).split(':').pop();
 const nameOf = (author) => author?.name ?? author?.handle ?? '알 수 없음';
 const mine = (message) => Boolean(state.me && message.by?.principal === state.me.principal);
+const can = (permission, channel) => Object.entries(state.me?.can ?? {}).some(([pattern, granted]) => granted.includes(permission) &&
+  (pattern === '*' || pattern === channel || (pattern.endsWith('/') && channel.startsWith(pattern))));
 
 function tone(text) {
   let hash = 0;
@@ -506,6 +509,7 @@ async function submitComposer(form) {
 let threadAbort = null;
 function openThread(id) {
   state.editing = null;
+  state.taskForm = null;
   threadAbort?.abort();
   if (!id) {
     state.thread = { id: null, data: null, loading: false, error: null };
@@ -532,7 +536,7 @@ async function loadThread({ quiet = false, toEnd = false } = {}) {
     state.thread = { ...state.thread, loading: false, error };
     if (quiet) return toast(error.message, 'error');
   }
-  if (state.editing && quiet) {
+  if ((state.editing || state.taskForm) && quiet) {
     state.deferred = true;
     return;
   }
@@ -616,21 +620,108 @@ function doc(message) {
       : message.deleted ? html`<p class="deleted">삭제된 메시지예요.</p>`
       : html`<div class="md doc-body">${raw(renderMarkdown(body))}</div>`}
     ${files(message)}
-    ${task ? taskPanel(task) : ''}
+    ${task || state.taskForm?.id === message.id ? taskPanel(message) : ''}
     ${message.deleted ? '' : reactions(message, false)}
   </article>`;
 }
 
-function taskPanel(task) {
-  const lines = [
-    task.claim && `${actorName(task.claim.actor)} 님이 진행 중 · ${fullDate.format(new Date(task.claim.until))}까지`,
-    task.for && `담당 ${actorName(task.for)}`,
-    task.blocked && `막힌 이유: ${task.blocked.reason}`,
-    task.result && `결과: ${task.result}`,
-    task.reason && `사유: ${task.reason}`,
-    task.needs?.length && `선행 작업 ${task.needs.length}개`,
+function taskPanel(message) {
+  const task = message.task;
+  const form = state.taskForm?.id === message.id ? state.taskForm.mode : null;
+  const owner = Boolean(task) && (task.owner === state.me?.principal || can('manage', message.channel));
+  const open = Boolean(task) && !['completed', 'canceled'].includes(task.state);
+  const lines = task ? [
+    task.result && ['결과', task.result],
+    task.reason && [task.state === 'failed' ? '실패 이유' : '취소 이유', task.reason],
+    task.blocked && ['막힌 이유', task.blocked.reason],
+    task.claim && ['진행', `${actorName(task.claim.actor)} · ${fullDate.format(new Date(task.claim.until))}까지`],
+    task.for && ['담당', actorName(task.for)],
+    task.needs?.length && ['선행 작업', `${task.needs.length}개`],
+  ].filter(Boolean) : [];
+  const actions = form ? [] : [
+    task?.state === 'ready' && can('label', message.channel) && ['task-complete', '완료로 표시', true],
+    task?.state === 'blocked' && owner && ['task-unblock', '막힘 풀기'],
+    task?.state === 'failed' && owner && ['task-reopen', '다시 열기'],
+    open && owner && ['task-cancel', '작업 취소'],
   ].filter(Boolean);
-  return lines.length ? html`<div class="task-panel" data-state="${task.state}">${lines.map((line) => html`<p>${line}</p>`)}</div>` : '';
+  return html`<section class="task-panel" data-state="${task?.state ?? 'new'}" aria-label="작업">
+    <div class="task-head">
+      ${task ? taskBadge(task) : ''}
+      <span class="task-title">${task ? `${actorName(task.owner)}의 작업` : '작업으로 만들고 바로 완료해요'}</span>
+      <span class="grow"></span>
+      ${actions.map(([action, label, primary]) => html`<button type="button" class="btn sm${primary ? ' btn-primary' : ''}" data-action="${action}" data-id="${message.id}">${primary ? svg('check', 14) : ''}${label}</button>`)}
+    </div>
+    ${lines.length ? html`<dl class="task-lines">${lines.map(([term, value]) => html`<div><dt>${term}</dt><dd>${value}</dd></div>`)}</dl>` : ''}
+    ${form ? html`<form class="task-form" id="task-form" data-id="${message.id}" data-mode="${form}">
+      <input id="task-text" autocomplete="off" spellcheck="false"${attr('required', form === 'cancel')}
+        placeholder="${form === 'complete' ? '결과 한 줄 (선택)' : '취소하는 이유'}" aria-label="${form === 'complete' ? '결과' : '취소 이유'}">
+      <div class="task-form-row">
+        <span class="task-note">${form === 'complete' ? '완료한 작업은 다시 열 수 없어요.' : '취소한 작업은 다시 열 수 없어요.'}</span>
+        <button type="button" class="btn sm" data-action="task-form-close">닫기</button>
+        <button type="submit" class="btn sm btn-primary">${form === 'complete' ? '완료로 표시' : '작업 취소'}</button>
+      </div>
+    </form>` : ''}
+  </section>`;
+}
+
+function openTaskForm(id, mode) {
+  state.taskForm = { id, mode };
+  renderReaderBody({ quiet: true });
+  const input = $('#task-text');
+  input?.scrollIntoView({ block: 'nearest' });
+  input?.focus({ preventScroll: true });
+}
+
+function closeTaskForm() {
+  state.taskForm = null;
+  settle();
+}
+
+/** After an inline form closes: what live updates held back, or the same view without the form. */
+function settle() {
+  if (!state.deferred) return renderReaderBody({ quiet: true });
+  state.deferred = false;
+  loadThread({ quiet: true });
+}
+
+const taskError = (error) => (error.status === 409 ? `그사이 작업 상태가 바뀌었어요: ${error.message}` : error.message);
+
+async function taskAction(id, run, done) {
+  try {
+    await run();
+    state.taskForm = null;
+    state.deferred = false;
+    toast(done);
+    await loadThread({ quiet: true });
+    refreshList();
+  } catch (error) {
+    toast(taskError(error), 'error');
+  }
+}
+
+/** Completing needs a claim: take one (making the thread a task first if it isn't), then finish with it. */
+async function completeTask(message, result) {
+  const { claim } = message.task ? await api.claimTask(message.id) : await api.createTask({ re: message.id, claim: true });
+  if (!claim) throw new Error('작업은 만들었지만 지금은 맡을 수 없어요. 상태를 확인해 주세요.');
+  try {
+    await api.completeTask(message.id, claim, result);
+  } catch (error) {
+    await api.releaseTask(message.id, claim).catch(() => {});
+    throw error;
+  }
+}
+
+async function submitTaskForm(form) {
+  const message = findMessage(form.dataset.id);
+  const input = $('#task-text', form);
+  const text = input.value.trim();
+  const cancel = form.dataset.mode === 'cancel';
+  if (!message) return;
+  if (cancel && !text) return input.focus();
+  busy(form, true);
+  await taskAction(message.id, () => (cancel ? api.cancelTask(message.id, text) : completeTask(message, text)),
+    cancel ? '작업을 취소했어요' : '완료로 표시했어요');
+  if (form.isConnected) busy(form, false);
 }
 
 function replyItem(message, previous) {
@@ -688,11 +779,7 @@ function startEdit(id) {
 
 function stopEdit() {
   state.editing = null;
-  if (state.deferred) {
-    state.deferred = false;
-    return loadThread({ quiet: true });
-  }
-  renderReaderBody({ quiet: true });
+  settle();
 }
 
 async function submitEdit(form) {
@@ -809,6 +896,9 @@ function menu(message) {
   return html`<div class="menu" role="menu">
     <button type="button" role="menuitem" data-action="menu-link" data-id="${message.id}">${svg('link', 15)}링크 복사</button>
     <button type="button" role="menuitem" data-action="menu-text" data-id="${message.id}">${svg('copy', 15)}텍스트 복사</button>
+    ${message.re === null && !message.task && can('label', message.channel) ? html`<hr>
+      <button type="button" role="menuitem" data-action="menu-task-done" data-id="${message.id}">${svg('check', 15)}완료로 표시…</button>
+      <button type="button" role="menuitem" data-action="menu-task-make" data-id="${message.id}" title="준비 상태가 되면 작업 큐를 보는 에이전트가 가져갈 수 있어요">${svg('tasks', 15)}<span>작업으로 만들기</span></button>` : ''}
     ${mine(message) ? html`<hr>
       <button type="button" role="menuitem" data-action="menu-edit" data-id="${message.id}">${svg('pencil', 15)}수정</button>
       <button type="button" role="menuitem" class="danger" data-action="menu-delete" data-id="${message.id}">${svg('trash', 15)}<span>삭제</span></button>` : ''}
@@ -903,7 +993,7 @@ function autosize(textarea) {
 
 function busy(form, on) {
   form.toggleAttribute('aria-busy', on);
-  for (const control of form.querySelectorAll('button[type="submit"], textarea')) control.disabled = on;
+  for (const control of form.querySelectorAll('button[type="submit"], textarea, input')) control.disabled = on;
 }
 
 function cycleTheme() {
@@ -996,6 +1086,24 @@ const actions = {
     removeMessage(button.dataset.id);
   },
   'edit-cancel': stopEdit,
+  'menu-task-done': (button) => {
+    closePopover();
+    openTaskForm(button.dataset.id, 'complete');
+  },
+  'menu-task-make': (button) => {
+    if (!button.dataset.armed) {
+      button.dataset.armed = '1';
+      button.lastChild.textContent = '한 번 더: 준비 상태로 만들기';
+      return;
+    }
+    closePopover();
+    taskAction(button.dataset.id, () => api.createTask({ re: button.dataset.id }), '작업으로 만들었어요 · 준비 상태');
+  },
+  'task-complete': (button) => openTaskForm(button.dataset.id, 'complete'),
+  'task-cancel': (button) => openTaskForm(button.dataset.id, 'cancel'),
+  'task-unblock': (button) => taskAction(button.dataset.id, () => api.unblockTask(button.dataset.id), '막힘을 풀었어요'),
+  'task-reopen': (button) => taskAction(button.dataset.id, () => api.reopenTask(button.dataset.id), '다시 열었어요'),
+  'task-form-close': closeTaskForm,
   'copy-code': (button) => copy(button.closest('.md-code').querySelector('code').textContent, '코드를 복사했어요'),
   'open-file': openFile,
   theme: cycleTheme,
@@ -1030,6 +1138,7 @@ document.addEventListener('submit', (event) => {
   if (form.id === 'composer') submitComposer(form);
   else if (form.id === 'reply-form') submitReply(form);
   else if (form.id === 'editor') submitEdit(form);
+  else if (form.id === 'task-form') submitTaskForm(form);
   else if (form.id === 'new-channel') createChannel(form);
 });
 
@@ -1069,6 +1178,7 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     if (state.popover) return closePopover();
     if (typing?.id === 'edit-text') return stopEdit();
+    if (typing?.id === 'task-text') return closeTaskForm();
     if (typing?.closest('#new-channel')) return void ($('#new-channel-slot').innerHTML = '');
     if (typing) return typing.blur();
     if (document.body.classList.contains('nav-open')) return document.body.classList.remove('nav-open');
@@ -1127,6 +1237,7 @@ async function boot() {
     state.me = me;
     state.channels = channels.channels;
     for (const actor of actors.actors) state.actors.set(actor.id, actor);
+    if (!state.actors.has(me.actor)) state.actors.set(me.actor, { id: me.actor, kind: me.kind, handle: me.handle, name: me.name, avatar: me.avatar });
   } catch (error) {
     return renderOffline(error);
   }

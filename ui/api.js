@@ -43,6 +43,14 @@ export const api = {
   react: (message, emoji, remove = false) =>
     call('POST', `/messages/${id(message)}/reactions`, { body: remove ? { emoji, remove } : { emoji } }),
   events: (query, signal) => call('GET', '/events', { query, signal }),
+  createTask: (body) => call('POST', '/tasks', { body }),
+  claimTask: (task) => call('POST', `/tasks/${id(task)}/claim`, { body: {} }),
+  completeTask: (task, { epoch, token }, result) =>
+    call('POST', `/tasks/${id(task)}/complete`, { body: result ? { epoch, token, result } : { epoch, token } }),
+  releaseTask: (task, { epoch, token }) => call('POST', `/tasks/${id(task)}/release`, { body: { epoch, token } }),
+  cancelTask: (task, reason) => call('POST', `/tasks/${id(task)}/cancel`, { body: { reason } }),
+  reopenTask: (task) => call('POST', `/tasks/${id(task)}/reopen`),
+  unblockTask: (task) => call('POST', `/tasks/${id(task)}/unblock`),
   async file(attachment) {
     const response = await fetch(`/board/attachments/${id(attachment)}`, { headers: { 'x-inspect-token': token } });
     if (!response.ok) throw new ApiError(response.status, 'http', response.statusText);
