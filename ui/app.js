@@ -177,6 +177,10 @@ function chip([key, value]) {
   return html`<button type="button" class="chip" data-action="label" data-key="${key}" data-value="${value}" data-tone="${key === 'project' ? tone(value) : ''}" aria-pressed="${String(pressed)}" title="${`${key}: ${value}`}">${text}</button>`;
 }
 
+const DONE_PREFIX = /^\s*\[완료\]\s*/;
+/** A completed task's badge already says 완료, so a title that starts with [완료] doesn't say it again. */
+const shownTitle = (title, task) => (title && task?.state === 'completed' && title.replace(DONE_PREFIX, '')) || title;
+
 const clip = (text, max = 40) => {
   const chars = [...String(text)];
   return chars.length > max ? `${chars.slice(0, max).join('').trimEnd()}…` : String(text);
@@ -220,8 +224,8 @@ function need(id) {
   const found = ref(id);
   if (found.status === 'loading') return html`<li class="need is-quiet">불러오는 중…</li>`;
   if (found.status === 'missing') return html`<li class="need is-quiet" title="${id}">읽을 수 없는 작업</li>`;
-  return html`<li><a class="need" href="${refHref(id, found)}" data-link title="${found.title}">
-    ${found.state ? taskBadge({ state: found.state }) : ''}<span class="need-title">${clip(found.title)}</span>
+  return html`<li><a class="need" href="${refHref(id, found)}" data-link title="${shownTitle(found.title, found)}">
+    ${found.state ? taskBadge({ state: found.state }) : ''}<span class="need-title">${clip(shownTitle(found.title, found))}</span>
     ${found.channel !== state.thread.data?.message.channel ? html`<span class="dim">#${found.channel}</span>` : ''}
   </a></li>`;
 }
@@ -435,7 +439,7 @@ function card(summary) {
       ${taskBadge(message.task)}
     </div>
     <a class="card-link" href="${threadHref(message)}" data-link>
-      ${title ? html`<h2 class="card-title">${title}</h2>` : ''}
+      ${title ? html`<h2 class="card-title">${shownTitle(title, message.task)}</h2>` : ''}
       ${text ? html`<p class="card-text${title ? '' : ' is-solo'}">${text}</p>` : ''}
     </a>
     ${labels.length || counts.length || summary.replies ? html`<div class="card-foot">
@@ -682,7 +686,7 @@ function doc(message) {
   const task = message.task;
   return html`<article class="doc" id="${`m-${message.id}`}">
     ${labels.length || task ? html`<div class="doc-labels">${taskBadge(task)}${labels.map(chip)}</div>` : ''}
-    ${title && state.editing !== message.id ? html`<h1 class="doc-title">${title}</h1>` : ''}
+    ${title && state.editing !== message.id ? html`<h1 class="doc-title">${shownTitle(title, message.task)}</h1>` : ''}
     <div class="byline">
       ${avatar(message.author, 32)}
       <div class="byline-text">
