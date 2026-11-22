@@ -177,6 +177,55 @@ function chip([key, value]) {
   return html`<button type="button" class="chip" data-action="label" data-key="${key}" data-value="${value}" data-tone="${key === 'project' ? tone(value) : ''}" aria-pressed="${String(pressed)}" title="${`${key}: ${value}`}">${text}</button>`;
 }
 
+const clip = (text, max = 40) => {
+  const chars = [...String(text)];
+  return chars.length > max ? `${chars.slice(0, max).join('').trimEnd()}…` : String(text);
+};
+
+/* Other threads a view names (a task's needs): read once, then kept current by live events. */
+const refs = new Map();
+
+function remember(message) {
+  const { title } = splitTitle(message.text);
+  refs.set(message.id, {
+    status: 'ok',
+    title: message.deleted ? '삭제된 메시지' : title ?? (plainText(message.text) || '(내용 없음)'),
+    channel: message.channel,
+    state: message.task?.state ?? null,
+  });
+}
+
+function ref(id) {
+  const listed = state.list.items.find((summary) => summary.message.id === id);
+  if (!refs.has(id) && listed) remember(listed.message);
+  if (!refs.has(id)) {
+    refs.set(id, { status: 'loading' });
+    api.message(id).then(({ message }) => remember(message), () => refs.set(id, { status: 'missing' }))
+      .finally(refreshReader);
+  }
+  return refs.get(id);
+}
+
+function refreshReader() {
+  if (!state.thread.data) return;
+  if (state.editing || state.taskForm) state.deferred = true;
+  else renderReaderBody({ quiet: true });
+}
+
+const refHref = (id, found) => state.route.view === 'tasks'
+  ? href({ thread: id })
+  : href({ view: 'channel', channel: found.channel, thread: id, q: '', labels: [] });
+
+function need(id) {
+  const found = ref(id);
+  if (found.status === 'loading') return html`<li class="need is-quiet">불러오는 중…</li>`;
+  if (found.status === 'missing') return html`<li class="need is-quiet" title="${id}">읽을 수 없는 작업</li>`;
+  return html`<li><a class="need" href="${refHref(id, found)}" data-link title="${found.title}">
+    ${found.state ? taskBadge({ state: found.state }) : ''}<span class="need-title">${clip(found.title)}</span>
+    ${found.channel !== state.thread.data?.message.channel ? html`<span class="dim">#${found.channel}</span>` : ''}
+  </a></li>`;
+}
+
 const taskBadge = (task) => task ? html`<span class="task-badge" data-state="${task.state}">${TASK_STATES[task.state] ?? task.state}</span>` : '';
 
 function reactions(message, always) {
@@ -662,7 +711,7 @@ function taskPanel(message) {
     task.blocked && ['막힌 이유', task.blocked.reason],
     task.claim && ['진행', `${actorName(task.claim.actor)} · ${fullDate.format(new Date(task.claim.until))}까지`],
     task.for && ['담당', actorName(task.for)],
-    task.needs?.length && ['선행 작업', `${task.needs.length}개`],
+    task.needs?.length && ['선행 작업', html`<ul class="needs">${task.needs.map(need)}</ul>`],
   ].filter(Boolean) : [];
   const actions = form ? [] : [
     task?.state === 'ready' && can('label', message.channel) && ['task-complete', '완료로 표시', true],
@@ -957,8 +1006,13 @@ function handleEvents(events) {
   let thread = false;
   let channels = false;
   const unread = state.unread.size;
+  let named = false;
   for (const event of events) {
     if (event.actor?.id) state.actors.set(event.actor.id, event.actor);
+    if (event.message && refs.has(event.message.id)) {
+      remember(event.message);
+      named = true;
+    }
     const channel = event.message?.channel ?? event.payload?.channel;
     const key = event.message?.thread ?? event.payload?.thread;
     if (event.type === 'channel.created' || (channel && !state.channels.some((item) => item.path === channel))) channels = true;
@@ -970,6 +1024,7 @@ function handleEvents(events) {
   else if (state.unread.size !== unread) renderSidebar();
   if (list) refreshList();
   if (thread) loadThread({ quiet: true });
+  else if (named) refreshReader();
 }
 
 async function loadChannels() {

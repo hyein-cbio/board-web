@@ -656,6 +656,24 @@ kbd {
 .task-lines div { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 12px; }
 .task-lines dt { color: var(--faint); font-size: 12.5px; font-weight: 600; line-height: 1.6; }
 .task-lines dd { margin: 0; color: var(--ink-2); line-height: 1.6; word-break: keep-all; overflow-wrap: anywhere; }
+.needs { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.need {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  margin-left: -4px;
+  padding: 1px 6px 1px 4px;
+  border-radius: 7px;
+  color: var(--ink-2);
+  text-decoration: none;
+  line-height: 1.6;
+}
+a.need:hover { background: var(--hover); color: var(--ink); }
+.need .task-badge { flex: none; height: 19px; padding: 0 7px 0 6px; font-size: 11px; }
+.need-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.need .dim { flex: none; font-size: 12px; }
+.need.is-quiet { color: var(--faint); }
 .task-form { margin-top: 12px; }
 .task-form input {
   width: 100%;

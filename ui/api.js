@@ -36,6 +36,7 @@ export const api = {
   createChannel: (path) => call('POST', '/channels', { body: { path } }),
   threads: (query, signal) => call('GET', '/threads', { query: { limit: 50, ...query }, signal }),
   thread: (root, signal) => call('GET', `/messages/${id(root)}`, { query: { limit: 500 }, signal }),
+  message: (root) => call('GET', `/messages/${id(root)}`, { query: { limit: 1 } }),
   tasks: (query, signal) => call('GET', '/tasks', { query, signal }),
   post: (body) => call('POST', '/messages', { body }),
   edit: (message, text, revision) => call('POST', `/messages/${id(message)}/edit`, { body: { text, revision } }),
