@@ -518,6 +518,27 @@ kbd {
 .doc.is-skeleton i:nth-child(3) { width: 96%; }
 .doc.is-skeleton i:nth-child(4) { width: 64%; }
 
+.list-done { display: flex; flex-direction: column; gap: inherit; margin-top: 14px; }
+.list-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--faint);
+}
+.list-group:hover { color: var(--ink); }
+.list-group-count { font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.list-group-rule { flex: 1; height: 1px; background: var(--line); }
+.list-group .icon { transition: transform 0.15s; }
+.list-group[aria-expanded="false"] .icon { transform: rotate(-90deg); }
+.list-done .card:not(.is-open) { background: color-mix(in srgb, var(--panel) 55%, var(--bg)); box-shadow: none; }
+.list-done .card:not(.is-open):hover { background: var(--panel); }
+.list-done .card-title { color: var(--ink-2); }
+
 .more {
   height: 40px;
   border: 1px dashed var(--line-2);

@@ -22,6 +22,7 @@ const view = { app: $('#app'), sidebar: $('#sidebar'), feed: $('#feed'), reader:
 
 /* ---------- state ---------- */
 
+const DONE_KEY = 'board-web.done-collapsed';
 const state = {
   board: null,
   me: null,
@@ -37,6 +38,13 @@ const state = {
   taskForm: null,
   deferred: false,
   popover: null,
+  doneCollapsed: (() => {
+    try {
+      return localStorage.getItem(DONE_KEY) === '1';
+    } catch {
+      return false;
+    }
+  })(),
 };
 
 const TASK_STATES = { waiting: '대기', ready: '준비', claimed: '진행 중', blocked: '막힘', completed: '완료', failed: '실패', canceled: '취소' };
@@ -166,7 +174,7 @@ function labelEntries(labels) {
 function chip([key, value]) {
   const text = key === 'priority' ? `P${value}` : KNOWN_LABELS.includes(key) ? value : `${key}: ${value}`;
   const pressed = state.route.labels.includes(`${key}=${value}`);
-  return html`<button type="button" class="chip" data-action="label" data-key="${key}" data-value="${value}" data-tone="${key === 'project' ? tone(value) : ''}" aria-pressed="${pressed}" title="${`${key}: ${value}`}">${text}</button>`;
+  return html`<button type="button" class="chip" data-action="label" data-key="${key}" data-value="${value}" data-tone="${key === 'project' ? tone(value) : ''}" aria-pressed="${String(pressed)}" title="${`${key}: ${value}`}">${text}</button>`;
 }
 
 const taskBadge = (task) => task ? html`<span class="task-badge" data-state="${task.state}">${TASK_STATES[task.state] ?? task.state}</span>` : '';
@@ -175,7 +183,7 @@ function reactions(message, always) {
   const entries = Object.entries(message.reactions ?? {}).filter(([, who]) => who.length);
   if (!entries.length && !always) return '';
   return html`<div class="reactions">${entries.map(([name, who]) => html`
-    <button type="button" class="reaction" data-action="react" data-id="${message.id}" data-emoji="${name}" aria-pressed="${who.includes(state.me?.actor)}" title="${who.map(actorName).join(', ')}">
+    <button type="button" class="reaction" data-action="react" data-id="${message.id}" data-emoji="${name}" aria-pressed="${String(who.includes(state.me?.actor))}" title="${who.map(actorName).join(', ')}">
       <span class="emoji">${emoji(name)}</span><span class="count">${who.length}</span>
     </button>`)}
     <button type="button" class="reaction add" data-action="pick" data-id="${message.id}" aria-label="반응 추가" title="반응 추가">${svg('smile', 15)}</button>
@@ -302,6 +310,16 @@ function syncFeedHead() {
     <button type="button" class="link-btn" data-action="clear-filters">모두 지우기</button>`;
 }
 
+const isDone = (summary) => summary.message.task?.state === 'completed';
+const groupsDone = () => state.route.view === 'channel' || (state.route.view === 'tasks' && state.route.state === 'all');
+
+/** The list as shown: completed threads gathered after the rest, and left out while their group is folded. */
+function listOrder() {
+  const { items } = state.list;
+  if (!groupsDone()) return items;
+  return [...items.filter((summary) => !isDone(summary)), ...(state.doneCollapsed ? [] : items.filter(isDone))];
+}
+
 function renderList() {
   const list = $('#list');
   if (!list) return;
@@ -335,7 +353,15 @@ function renderList() {
         : route.view === 'channel' ? html`<button type="button" class="btn btn-primary" data-action="compose">${svg('plus', 16)}<span>새 글</span></button>` : ''}
     </div>`;
   } else {
-    list.innerHTML = html`${items.map(card)}
+    const done = groupsDone() ? items.filter(isDone) : [];
+    list.innerHTML = html`${(done.length ? items.filter((summary) => !isDone(summary)) : items).map(card)}
+      ${done.length ? html`<section class="list-done" aria-label="완료된 스레드">
+        <button type="button" class="list-group" data-action="toggle-done" aria-expanded="${String(!state.doneCollapsed)}">
+          <span class="task-badge" data-state="completed">완료</span><span class="list-group-count">${done.length}</span>
+          <span class="list-group-rule"></span>${svg('chevron', 15)}
+        </button>
+        ${state.doneCollapsed ? '' : done.map(card)}
+      </section>` : ''}
       ${older ? html`<button type="button" class="more" data-action="more"${attr('disabled', loading)}>${loading ? '불러오는 중…' : '이전 스레드 더 보기'}</button>` : ''}`;
   }
   state.list.fresh = null;
@@ -1017,7 +1043,7 @@ function toggleLabel(key, value) {
 }
 
 function step(direction) {
-  const items = state.list.items;
+  const items = listOrder();
   if (!items.length) return;
   const index = items.findIndex((summary) => summary.message.id === state.route.thread);
   const next = items[Math.min(items.length - 1, Math.max(0, index < 0 ? 0 : index + direction))];
@@ -1086,6 +1112,14 @@ const actions = {
     removeMessage(button.dataset.id);
   },
   'edit-cancel': stopEdit,
+  'toggle-done': () => {
+    state.doneCollapsed = !state.doneCollapsed;
+    try {
+      if (state.doneCollapsed) localStorage.setItem(DONE_KEY, '1');
+      else localStorage.removeItem(DONE_KEY);
+    } catch {}
+    renderList();
+  },
   'menu-task-done': (button) => {
     closePopover();
     openTaskForm(button.dataset.id, 'complete');
