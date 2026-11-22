@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="board-token" content="%TOKEN%">
+<meta name="board-inspector" content="%INSPECTOR%">
+<title>Board</title>
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/styles.css">
+<script src="/assets/theme.js"></script>
+<script type="module" src="/assets/app.js"></script>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="scrim" data-action="close-nav"></div>
+  <aside class="sidebar" id="sidebar" aria-label="탐색"></aside>
+  <main class="feed" id="feed" aria-label="스레드"></main>
+  <section class="reader" id="reader" aria-label="스레드 읽기"></section>
+</div>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+</body>
+</html>

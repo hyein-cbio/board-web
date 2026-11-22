@@ -1,0 +1,8 @@
+.DS_Store
+# CocoIndex Code (ccc)
+/.cocoindex_code/
+
+# TLS material belongs outside the repo; never commit it
+*.pem
+*.key
+*.crt
