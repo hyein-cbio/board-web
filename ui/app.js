@@ -363,14 +363,24 @@ function syncFeedHead() {
     <button type="button" class="link-btn" data-action="clear-filters">모두 지우기</button>`;
 }
 
-const isDone = (summary) => summary.message.task?.state === 'completed';
-const groupsDone = () => state.route.view === 'channel' || (state.route.view === 'tasks' && state.route.state === 'all');
+const DONE_STATES = ['completed', 'failed'];
 
-/** The list as shown: completed threads gathered after the rest, and left out while their group is folded. */
-function listOrder() {
+function listSections() {
   const { items } = state.list;
-  if (!groupsDone()) return items;
-  return [...items.filter((summary) => !isDone(summary)), ...(state.doneCollapsed ? [] : items.filter(isDone))];
+  const { view, state: taskState } = state.route;
+  if (view !== 'channel' && !(view === 'tasks' && taskState === 'all')) return { regular: items, done: [] };
+  const regular = [];
+  const done = [];
+  for (const summary of items) {
+    (DONE_STATES.includes(summary.message.task?.state) ? done : regular).push(summary);
+  }
+  return { regular, done };
+}
+
+/** Keyboard navigation follows the rendered order and skips the folded group. */
+function listOrder() {
+  const { regular, done } = listSections();
+  return state.doneCollapsed ? regular : [...regular, ...done];
 }
 
 function renderList() {
@@ -406,11 +416,11 @@ function renderList() {
         : route.view === 'channel' ? html`<button type="button" class="btn btn-primary" data-action="compose">${svg('plus', 16)}<span>새 글</span></button>` : ''}
     </div>`;
   } else {
-    const done = groupsDone() ? items.filter(isDone) : [];
-    list.innerHTML = html`${(done.length ? items.filter((summary) => !isDone(summary)) : items).map(card)}
-      ${done.length ? html`<section class="list-done" aria-label="완료된 스레드">
+    const { regular, done } = listSections();
+    list.innerHTML = html`${regular.map(card)}
+      ${done.length ? html`<section class="list-done" aria-label="완료 또는 실패한 스레드">
         <button type="button" class="list-group" data-action="toggle-done" aria-expanded="${String(!state.doneCollapsed)}">
-          <span class="task-badge" data-state="completed">완료</span><span class="list-group-count">${done.length}</span>
+          ${DONE_STATES.map((state) => taskBadge({ state }))}<span class="list-group-count">${done.length}</span>
           <span class="list-group-rule"></span>${svg('chevron', 15)}
         </button>
         ${state.doneCollapsed ? '' : done.map(card)}
