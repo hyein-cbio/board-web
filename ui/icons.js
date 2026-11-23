@@ -23,6 +23,7 @@ const PATHS = {
   copy: '<rect x="8.5" y="8.5" width="11" height="11" rx="2"/><path d="M15.5 8.5v-2a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/>',
   check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
   filter: '<path d="M4 6h16M7 12h10M10 18h4"/>',
+  tag: '<path d="M4 4h7l9 9-7 7-9-9V4Z"/><circle cx="8" cy="8" r="1"/>',
   chevron: '<path d="m6 9 6 6 6-6"/>',
 };
 

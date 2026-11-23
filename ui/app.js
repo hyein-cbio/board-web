@@ -2,6 +2,7 @@ import { api, online } from './api.js';
 import { emoji, QUICK } from './emoji.js';
 import { icon } from './icons.js';
 import { escapeHtml, plainText, renderMarkdown, setMentionNames, splitTitle } from './markdown.js';
+import { isSettled, listSections, SETTLED_KEY, SETTLED_TEXT, SETTLED_VALUE } from './threads.js';
 
 /* ---------- templating: values are escaped unless wrapped in raw() ---------- */
 
@@ -171,10 +172,15 @@ function labelEntries(labels) {
     .sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b));
 }
 
+function labelText(key, value, compact = false) {
+  if (key === SETTLED_KEY && value === SETTLED_VALUE) return SETTLED_TEXT;
+  if (key === 'priority') return `P${value}`;
+  return compact && KNOWN_LABELS.includes(key) ? value : `${key}: ${value}`;
+}
+
 function chip([key, value]) {
-  const text = key === 'priority' ? `P${value}` : KNOWN_LABELS.includes(key) ? value : `${key}: ${value}`;
   const pressed = state.route.labels.includes(`${key}=${value}`);
-  return html`<button type="button" class="chip" data-action="label" data-key="${key}" data-value="${value}" data-tone="${key === 'project' ? tone(value) : ''}" aria-pressed="${String(pressed)}" title="${`${key}: ${value}`}">${text}</button>`;
+  return html`<button type="button" class="chip" data-action="label" data-key="${key}" data-value="${value}" data-tone="${key === 'project' ? tone(value) : ''}" aria-pressed="${String(pressed)}" title="${`${key}: ${value}`}">${labelText(key, value, true)}</button>`;
 }
 
 const DONE_PREFIX = /^\s*\[완료\]\s*/;
@@ -359,27 +365,13 @@ function syncFeedHead() {
   filters.hidden = !active.length && !route.q;
   filters.innerHTML = html`
     ${route.q ? html`<button type="button" class="chip is-filter" data-action="clear-search">“${route.q}” ${svg('close', 12)}</button>` : ''}
-    ${active.map(([key, value]) => html`<button type="button" class="chip is-filter" data-action="label" data-key="${key}" data-value="${value ?? ''}">${key === 'priority' ? `P${value}` : `${key}: ${value}`} ${svg('close', 12)}</button>`)}
+    ${active.map(([key, value]) => html`<button type="button" class="chip is-filter" data-action="label" data-key="${key}" data-value="${value ?? ''}">${labelText(key, value)} ${svg('close', 12)}</button>`)}
     <button type="button" class="link-btn" data-action="clear-filters">모두 지우기</button>`;
-}
-
-const DONE_STATES = ['completed', 'failed'];
-
-function listSections() {
-  const { items } = state.list;
-  const { view, state: taskState } = state.route;
-  if (view !== 'channel' && !(view === 'tasks' && taskState === 'all')) return { regular: items, done: [] };
-  const regular = [];
-  const done = [];
-  for (const summary of items) {
-    (DONE_STATES.includes(summary.message.task?.state) ? done : regular).push(summary);
-  }
-  return { regular, done };
 }
 
 /** Keyboard navigation follows the rendered order and skips the folded group. */
 function listOrder() {
-  const { regular, done } = listSections();
+  const { regular, done } = listSections(state.list.items, state.route);
   return state.doneCollapsed ? regular : [...regular, ...done];
 }
 
@@ -416,11 +408,11 @@ function renderList() {
         : route.view === 'channel' ? html`<button type="button" class="btn btn-primary" data-action="compose">${svg('plus', 16)}<span>새 글</span></button>` : ''}
     </div>`;
   } else {
-    const { regular, done } = listSections();
+    const { regular, done } = listSections(items, route);
     list.innerHTML = html`${regular.map(card)}
-      ${done.length ? html`<section class="list-done" aria-label="완료 또는 실패한 스레드">
+      ${done.length ? html`<section class="list-done" aria-label="완료 또는 ${SETTLED_TEXT} 스레드">
         <button type="button" class="list-group" data-action="toggle-done" aria-expanded="${String(!state.doneCollapsed)}">
-          ${DONE_STATES.map((state) => taskBadge({ state }))}<span class="list-group-count">${done.length}</span>
+          ${taskBadge({ state: 'completed' })}<span class="chip">${SETTLED_TEXT}</span><span class="list-group-count">${done.length}</span>
           <span class="list-group-rule"></span>${svg('chevron', 15)}
         </button>
         ${state.doneCollapsed ? '' : done.map(card)}
@@ -981,17 +973,35 @@ function closePopover() {
 const picker = (id) => html`<div class="emoji-grid">${QUICK.map((name) =>
   html`<button type="button" data-action="emoji" data-id="${id}" data-emoji="${name}" title="${`:${name}:`}">${emoji(name)}</button>`)}</div>`;
 
+const canTagPost = (message) => message?.re === null && !message.deleted && can('label', message.channel);
+
 function menu(message) {
   return html`<div class="menu" role="menu">
     <button type="button" role="menuitem" data-action="menu-link" data-id="${message.id}">${svg('link', 15)}링크 복사</button>
     <button type="button" role="menuitem" data-action="menu-text" data-id="${message.id}">${svg('copy', 15)}텍스트 복사</button>
-    ${message.re === null && !message.task && can('label', message.channel) ? html`<hr>
-      <button type="button" role="menuitem" data-action="menu-task-done" data-id="${message.id}">${svg('check', 15)}완료로 표시…</button>
-      <button type="button" role="menuitem" data-action="menu-task-make" data-id="${message.id}" title="준비 상태가 되면 작업 큐를 보는 에이전트가 가져갈 수 있어요">${svg('tasks', 15)}<span>작업으로 만들기</span></button>` : ''}
+    ${canTagPost(message) ? html`<hr>
+      <button type="button" role="menuitem" data-action="menu-settled" data-id="${message.id}">${svg('tag', 15)}${SETTLED_TEXT} 태그 ${isSettled(message) ? '제거' : '추가'}</button>
+      ${!message.task ? html`
+        <button type="button" role="menuitem" data-action="menu-task-done" data-id="${message.id}">${svg('check', 15)}완료로 표시…</button>
+        <button type="button" role="menuitem" data-action="menu-task-make" data-id="${message.id}" title="준비 상태가 되면 작업 큐를 보는 에이전트가 가져갈 수 있어요">${svg('tasks', 15)}<span>작업으로 만들기</span></button>` : ''}` : ''}
     ${mine(message) ? html`<hr>
       <button type="button" role="menuitem" data-action="menu-edit" data-id="${message.id}">${svg('pencil', 15)}수정</button>
       <button type="button" role="menuitem" class="danger" data-action="menu-delete" data-id="${message.id}">${svg('trash', 15)}<span>삭제</span></button>` : ''}
   </div>`;
+}
+
+async function toggleSettled(id) {
+  const message = findMessage(id);
+  if (!canTagPost(message)) return;
+  const remove = isSettled(message);
+  try {
+    await api.label(id, remove ? { unset: [SETTLED_KEY] } : { set: { [SETTLED_KEY]: SETTLED_VALUE } });
+    toast(`${SETTLED_TEXT} 태그를 ${remove ? '제거했어요' : '추가했어요'}`);
+    refreshList();
+    if (state.thread.id === id) await loadThread({ quiet: true });
+  } catch (error) {
+    toast(error.message, 'error');
+  }
 }
 
 /* ---------- live ---------- */
@@ -1188,6 +1198,10 @@ const actions = {
       else localStorage.removeItem(DONE_KEY);
     } catch {}
     renderList();
+  },
+  'menu-settled': (button) => {
+    closePopover();
+    toggleSettled(button.dataset.id);
   },
   'menu-task-done': (button) => {
     closePopover();

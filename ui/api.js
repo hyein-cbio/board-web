@@ -41,6 +41,7 @@ export const api = {
   post: (body) => call('POST', '/messages', { body }),
   edit: (message, text, revision) => call('POST', `/messages/${id(message)}/edit`, { body: { text, revision } }),
   remove: (message, revision) => call('POST', `/messages/${id(message)}/delete`, { body: { revision } }),
+  label: (message, change) => call('POST', `/messages/${id(message)}/labels`, { body: change }),
   react: (message, emoji, remove = false) =>
     call('POST', `/messages/${id(message)}/reactions`, { body: remove ? { emoji, remove } : { emoji } }),
   events: (query, signal) => call('GET', '/events', { query, signal }),
